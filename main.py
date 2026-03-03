@@ -10,7 +10,6 @@ class VideoRequest(BaseModel):
 @app.post("/api/download")
 async def get_media_info(request: VideoRequest):
     ydl_opts = {
-        'format': 'best',
         'quiet': True,
         'skip_download': True,
         'no_warnings': True
@@ -22,34 +21,56 @@ async def get_media_info(request: VideoRequest):
             
             media_list = []
             
-            # Agar post mein multiple images/videos hain (jaise Instagram carousel)
-            if 'entries' in info:
+            # Agar multiple posts (carousel) hain aur list khali nahi hay
+            if 'entries' in info and info['entries']:
                 for entry in info['entries']:
-                    # Type check karna: mp4/webm hai toh video, warna image
-                    media_type = "video" if entry.get('ext') in ['mp4', 'webm'] else "image"
+                    if entry is None: # Agar koi item fetch na ho sakay toh skip krain
+                        continue
+                        
+                    ext = entry.get('ext', '')
+                    media_type = "video" if ext in ['mp4', 'webm'] else "image"
+                    
+                    # Images ke case mein kabhi direct 'url' nahi milta, wahan hum thumbnail use krain ge
+                    media_url = entry.get('url')
+                    if not media_url:
+                        media_url = entry.get('thumbnail')
+                        
+                    if media_url: 
+                        media_list.append({
+                            "type": media_type,
+                            "url": media_url,
+                            "thumbnail": entry.get('thumbnail')
+                        })
+            else:
+                # Agar single image/video hay
+                ext = info.get('ext', '')
+                media_type = "video" if ext in ['mp4', 'webm'] else "image"
+                
+                media_url = info.get('url')
+                if not media_url:
+                    media_url = info.get('thumbnail')
+                    
+                if media_url:
                     media_list.append({
                         "type": media_type,
-                        "url": entry.get('url'),
-                        "thumbnail": entry.get('thumbnail')
+                        "url": media_url,
+                        "thumbnail": info.get('thumbnail')
                     })
-            else:
-                # Agar single image ya single video hai
-                media_type = "video" if info.get('ext') in ['mp4', 'webm'] else "image"
-                media_list.append({
-                    "type": media_type,
-                    "url": info.get('url'),
-                    "thumbnail": info.get('thumbnail')
-                })
+            
+            # Agar aakhir mein koi bhi link na milay
+            if len(media_list) == 0:
+                raise Exception("Media nahi mila. Shayad account private hay ya link invalid hay.")
                 
             return {
                 "success": True,
                 "title": info.get('title', 'Unknown'),
-                "media": media_list,  # Ab yahan poori list aayegi
+                "media": media_list,
                 "original_url": request.url
             }
+            
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.get("/")
 def home():
-    return {"message": "API ab Images aur Videos dono ke liye tayyar hay!"}
+    return {"message": "API is working perfectly for both Images and Videos!"}
