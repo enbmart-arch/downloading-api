@@ -1,40 +1,29 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from pydantic import BaseModel
 import requests
-import re
 
-app = FastAPI(title="Media Bridge API")
+app = FastAPI()
 
 class VideoRequest(BaseModel):
     url: str
 
 @app.post("/api/download")
 async def get_media_info(request: VideoRequest):
-    # Target: Aik aisi site jo carousel handle karti hay
+    # Hum aik naya stable scraper use kar rahay hain (SnapInsta type logic)
     target_api = "https://api.vveet.com/v1/ig/info"
     
     headers = {
         "Content-Type": "application/json",
-        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15",
-        "Origin": "https://vveet.com",
-        "Referer": "https://vveet.com/"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
     }
     
-    # URL ko clean krain
-    clean_url = request.url.split('?')[0]
-    payload = {"url": clean_url}
-
     try:
-        # Request bhejna
-        response = requests.post(target_api, json=payload, headers=headers, timeout=15)
-        
-        if response.status_code != 200:
-            return {"success": False, "message": "Third-party scraper block ho gaya hay."}
-
+        # Clean URL
+        clean_url = request.url.split('?')[0]
+        response = requests.post(target_api, json={"url": clean_url}, headers=headers, timeout=15)
         data = response.json()
+        
         media_list = []
-
-        # JSON response ko parhna (Parsing)
         if "data" in data and "medias" in data["data"]:
             for item in data["data"]["medias"]:
                 media_list.append({
@@ -44,18 +33,17 @@ async def get_media_info(request: VideoRequest):
                 })
 
         if not media_list:
-            return {"success": False, "message": "Koi media nahi mila. Link check krain."}
+            return {"success": False, "message": "Scraper ne data nahi diya."}
 
         return {
             "success": True,
-            "title": data.get("data", {}).get("title", "Instagram Post"),
-            "count": len(media_list),
+            "version": "5.0_NO_YT_DLP", # Is line se humein pata chalay ga naya code hay
             "media": media_list
         }
-
     except Exception as e:
-        return {"success": False, "error": "Server Busy! Dobara koshish krain."}
+        return {"success": False, "error": str(e)}
 
 @app.get("/")
 def home():
-    return {"message": "Bridge API is active. No yt-dlp here!"}
+    # Is message ko browser mein check krain
+    return {"message": "Dhamaka Version 5.0 - NO YT-DLP LIVE!"}
