@@ -2,6 +2,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import yt_dlp
 import urllib.request
+import json
 import re
 
 app = FastAPI(title="Media Downloader API")
@@ -12,7 +13,6 @@ class VideoRequest(BaseModel):
 def get_media_item(item):
     url = item.get('url')
     ext = item.get('ext', '')
-    
     if not url:
         thumbnails = item.get('thumbnails', [])
         if thumbnails:
@@ -24,7 +24,6 @@ def get_media_item(item):
         return None
         
     media_type = "video" if ext in ['mp4', 'webm'] or '.mp4' in url else "image"
-    
     return {
         "type": media_type,
         "url": url,
@@ -44,9 +43,9 @@ async def get_media_info(request: VideoRequest):
     }
     
     media_list = []
-    title = "Unknown"
+    title = "Instagram Media"
     
-    # Engine 1: Videos aur normal media ke liye (yt-dlp)
+    # Engine 1: yt-dlp (Standard Engine)
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(request.url, download=False)
@@ -55,65 +54,78 @@ async def get_media_info(request: VideoRequest):
             if 'entries' in info and info['entries']:
                 for entry in info['entries']:
                     if entry:
-                        media_item = get_media_item(entry)
-                        if media_item:
-                            media_list.append(media_item)
+                        m_item = get_media_item(entry)
+                        if m_item: media_list.append(m_item)
             else:
-                media_item = get_media_item(info)
-                if media_item:
-                    media_list.append(media_item)
-    except Exception as e:
-        pass # Agar library fail ho, toh chup chap Engine 2 par jao
+                m_item = get_media_item(info)
+                if m_item: media_list.append(m_item)
+    except Exception:
+        pass
 
-    # Engine 2: The "Embed Page" Bypass Trick (Khaas Images ke liye)
+    # Engine 2: High-Res Scraper Proxy (Full Width & Carousels ke liye)
     if not media_list and "instagram.com" in request.url:
         try:
-            # URL se sirf shortcode nikalna
+            req = urllib.request.Request(
+                "https://api.cobalt.tools/api/json",
+                data=json.dumps({"url": request.url}).encode('utf-8'),
+                headers={
+                    "Accept": "application/json",
+                    "Content-Type": "application/json",
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+                    "Origin": "https://cobalt.tools",
+                    "Referer": "https://cobalt.tools/"
+                }
+            )
+            res = urllib.request.urlopen(req).read()
+            data = json.loads(res.decode('utf-8'))
+            
+            # Agar multiple images/videos hon (Carousel)
+            if data.get('status') == 'picker':
+                for item in data.get('picker', []):
+                    media_list.append({
+                        "type": "video" if item.get('type') == 'video' else "image",
+                        "url": item.get('url'),
+                        "thumbnail": item.get('thumb') or item.get('url')
+                    })
+            # Agar single full-res image/video ho
+            elif data.get('status') in ['redirect', 'success', 'stream']:
+                url = data.get('url')
+                if url:
+                    media_list.append({
+                        "type": "video" if ".mp4" in url else "image",
+                        "url": url,
+                        "thumbnail": url
+                    })
+        except Exception:
+            pass
+
+    # Engine 3: Embed Fallback (Akhri Rasta - Single Square Image)
+    if not media_list and "instagram.com" in request.url:
+        try:
             shortcode_match = re.search(r'instagram\.com/(?:p|reel|tv)/([^/?#&]+)', request.url)
             if shortcode_match:
                 shortcode = shortcode_match.group(1)
-                
-                # Embed URL create karna jo Login bypass karta hay
                 embed_url = f"https://www.instagram.com/p/{shortcode}/embed/captioned/"
-                
-                req = urllib.request.Request(
-                    embed_url, 
-                    headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
-                )
-                html_bytes = urllib.request.urlopen(req).read()
-                html = html_bytes.decode('utf-8')
-                
-                # Embed code ke andar se tasweer dhoondna
+                req = urllib.request.Request(embed_url, headers={'User-Agent': 'Mozilla/5.0'})
+                html = urllib.request.urlopen(req).read().decode('utf-8')
                 img_match = re.search(r'class="EmbeddedMediaImage"[^>]*src="([^"]+)"', html)
                 if not img_match:
                     img_match = re.search(r'src="([^"]+\.jpg[^"]*)"', html)
-                    
                 if img_match:
-                    image_url = img_match.group(1).replace("&amp;", "&")
+                    img_url = img_match.group(1).replace("&amp;", "&")
                     media_list.append({
                         "type": "image",
-                        "url": image_url,
-                        "thumbnail": image_url
+                        "url": img_url,
+                        "thumbnail": img_url
                     })
-                    title = "Instagram Image"
-        except Exception as backup_error:
+        except Exception:
             pass
 
-    # Agar phir bhi dono engines fail ho jayen
     if not media_list:
-        return {
-            "success": False, 
-            "message": "Account shayad completely private hay.",
-            "original_url": request.url
-        }
+        return {"success": False, "message": "Account shayad completely private hay.", "original_url": request.url}
         
-    return {
-        "success": True,
-        "title": title,
-        "media": media_list,
-        "original_url": request.url
-    }
+    return {"success": True, "title": title, "media": media_list, "original_url": request.url}
 
 @app.get("/")
 def home():
-    return {"message": "API with Embed-Bypass Engine is fully active!"}
+    return {"message": "Super API with 3 Engines (Carousels Fixed) is Running!"}
