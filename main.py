@@ -10,15 +10,12 @@ class VideoRequest(BaseModel):
 
 @app.post("/api/download")
 async def get_media_info(request: VideoRequest):
+    # Website ka asli backend endpoint
     target_api = "https://api-wh.sssinstagram.com/api/convert"
     
-    # Current timestamp generate karna (milliseconds mein)
-    current_ts = str(int(time.time() * 1000))
-    
-    # Ye headers website ko 'mimic' karne ke liye zaroori hain
+    # Headers jo website ko mimic krain ge
     headers = {
         "Accept": "application/json, text/plain, */*",
-        "Accept-Language": "en-US,en;q=0.9",
         "Content-Type": "application/json",
         "Origin": "https://sssinstagram.com",
         "Referer": "https://sssinstagram.com/",
@@ -26,63 +23,48 @@ async def get_media_info(request: VideoRequest):
         "X-Requested-With": "XMLHttpRequest"
     }
     
-    # Payload jo aapne diya hay (Signature aur timestamps ke sath)
-    # Note: Agar ye _s static nahi hay toh humein isay har bar change karna paray ga
+    # Payload jo aap ne provide kiya tha
+    # NOTE: Agar ye _s static nahi hay, toh ye method fail ho sakta hay
     payload = {
         "sf_url": request.url,
-        "ts": "1772560134165", # Jo aapne diya
-        "_ts": "1770970183770", # Jo aapne diya
+        "ts": "1772560134165",
+        "_ts": "1770970183770",
         "_tsc": "0",
         "_sv": "2",
-        "_s": "4b67e2bcaa41a5f41b3a39ab416d0169c8e6f185e3653a3a4a1a0564d4d2e3d1" # Signature
+        "_s": "4b67e2bcaa41a5f41b3a39ab416d0169c8e6f185e3653a3a4a1a0564d4d2e3d1"
     }
 
     try:
-        response = requests.post(target_api, json=payload, headers=headers, timeout=15)
+        # Request bhejna
+        response = requests.post(target_api, json=payload, headers=headers, timeout=20)
         
+        # Check krain ke website ne kya jawab diya
         if response.status_code != 200:
             return {
-                "success": False, 
-                "message": f"Website ne error diya: {response.status_code}",
-                "raw_response": response.text
+                "success": False,
+                "message": f"Website ne error diya code: {response.status_code}",
+                "raw_body": response.text[:500] # Pehle 500 characters check karne ke liye
             }
 
         data = response.json()
         
-        # Unke response se links extract karna
-        # SSSInstagram aksar 'data' ya 'result' ke andar list deta hay
-        media_list = []
-        
-        # Note: Aapko unka response check karna hoga ke wo 'data' mein hay ya 'result' mein
-        # Main generic parsing likh raha hon
-        items = data.get('data', []) if isinstance(data.get('data'), list) else [data.get('data')]
-        
-        for item in items:
-            if item and isinstance(item, dict):
-                url = item.get('url') or item.get('download_url')
-                if url:
-                    media_list.append({
-                        "type": "video" if ".mp4" in url else "image",
-                        "url": url,
-                        "thumbnail": item.get('thumbnail') or url
-                    })
-
-        if not media_list:
+        # Agar response mein data mil jaye
+        if "data" in data:
             return {
-                "success": False, 
-                "message": "Signature invalid ho gaya hay ya URL sahi nahi hay.",
-                "debug_info": data # Taake aap dekh saken unhon ne kya bheja
+                "success": True,
+                "data": data["data"], # SSS ka asli response
+                "original_url": request.url
             }
-
-        return {
-            "success": True,
-            "media": media_list,
-            "original_url": request.url
-        }
+        else:
+            return {
+                "success": False,
+                "message": "Signature expired ya invalid link!",
+                "full_response": data
+            }
 
     except Exception as e:
         return {"success": False, "error": str(e)}
 
 @app.get("/")
 def home():
-    return {"message": "SSSInstagram Mimic API is Running!"}
+    return {"message": "Mimic API is Live. Testing SSS Endpoint..."}
