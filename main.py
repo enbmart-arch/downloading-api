@@ -1,96 +1,75 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import yt_dlp
-import json
-import re
-import urllib.request
+import os
 
-app = FastAPI(title="Pro Downloader API")
+app = FastAPI(title="Pro Media Downloader API")
 
 class VideoRequest(BaseModel):
     url: str
 
+def get_media_item(item):
+    url = item.get('url')
+    ext = item.get('ext', '')
+    if not url:
+        thumbnails = item.get('thumbnails', [])
+        if thumbnails:
+            url = thumbnails[-1].get('url') # High quality image
+        else:
+            url = item.get('thumbnail')
+            
+    if not url: return None
+        
+    media_type = "video" if ext in ['mp4', 'webm'] or '.mp4' in url else "image"
+    return {"type": media_type, "url": url, "thumbnail": item.get('thumbnail') or url}
+
 @app.post("/api/download")
 async def get_media_info(request: VideoRequest):
-    # Standard yt-dlp options
+    # Check krain ke cookies file majood hay ya nahi
+    cookie_path = 'cookies.txt'
+    has_cookies = os.path.exists(cookie_path)
+    
     ydl_opts = {
-        'quiet': True,
-        'skip_download': True,
-        'no_warnings': True,
+        'quiet': True, 
+        'skip_download': True, 
+        'no_warnings': True, 
         'extract_flat': False,
         'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Referer': 'https://www.instagram.com/',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
         }
     }
     
-    # Check krain ke cookies file GitHub par upload hay ya nahi
-    import os
-    if os.path.exists('cookies.txt'):
-        ydl_opts['cookiefile'] = 'cookies.txt'
-
+    # Agar cookies file upload ki gayi hay, toh usay use krain
+    if has_cookies:
+        ydl_opts['cookiefile'] = cookie_path
+    
+    media_list = []
+    title = "Instagram Media"
+    
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(request.url, download=False)
-            media_list = []
+            title = info.get('title', 'Instagram Post')
             
-            # Case 1: Carousel (Multiple Items)
-            if 'entries' in info:
+            # Carousel (Multiple Images/Videos) handle karna
+            if 'entries' in info and info['entries']:
                 for entry in info['entries']:
                     if entry:
-                        url = entry.get('url') or entry.get('thumbnail')
-                        ext = entry.get('ext', '')
-                        m_type = "video" if ext in ['mp4', 'webm'] or (url and '.mp4' in url) else "image"
-                        media_list.append({"type": m_type, "url": url, "thumbnail": entry.get('thumbnail')})
-            
-            # Case 2: Single Post
+                        m_item = get_media_item(entry)
+                        if m_item: media_list.append(m_item)
+            # Single Image/Video handle karna
             else:
-                url = info.get('url') or info.get('thumbnail')
-                ext = info.get('ext', '')
-                m_type = "video" if ext in ['mp4', 'webm'] or (url and '.mp4' in url) else "image"
-                media_list.append({"type": m_type, "url": url, "thumbnail": info.get('thumbnail')})
-
-            if media_list:
-                return {
-                    "success": True,
-                    "title": info.get('title', 'Instagram Post'),
-                    "count": len(media_list),
-                    "media": media_list
-                }
-            
-            raise Exception("Media list empty")
-
-    except Exception:
-        # Agar yt-dlp fail ho jaye toh Manual JSON Scraper (Bypass Trick)
-        try:
-            req = urllib.request.Request(request.url, headers={'User-Agent': 'Mozilla/5.0'})
-            html = urllib.request.urlopen(req).read().decode('utf-8')
-            
-            # Instagram ke hidden JSON data mein se links nikalna
-            links = re.findall(r'"display_url":"([^"]+)"', html)
-            if links:
-                # Duplicate links hatana
-                unique_links = list(dict.fromkeys(links))
-                final_media = []
-                for l in unique_links:
-                    final_media.append({"type": "image", "url": l.replace('\\u0026', '&'), "thumbnail": l.replace('\\u0026', '&')})
+                m_item = get_media_item(info)
+                if m_item: media_list.append(m_item)
                 
-                return {
-                    "success": True,
-                    "title": "Instagram Carousel (Manual)",
-                    "count": len(final_media),
-                    "media": final_media
-                }
-        except:
-            pass
-            
-        return {
-            "success": False,
-            "message": "Instagram security wall! Please upload cookies.txt to GitHub for 100% results.",
-            "original_url": request.url
-        }
+    except Exception as e:
+        return {"success": False, "message": f"Error: {str(e)}", "original_url": request.url}
+
+    if not media_list:
+        return {"success": False, "message": "Media nahi mila. Agar ye carousel hay toh cookies.txt lazmi upload krain.", "original_url": request.url}
+        
+    return {"success": True, "title": title, "media": media_list, "original_url": request.url}
 
 @app.get("/")
 def home():
-    return {"message": "API is online. For carousels, cookies.txt is highly recommended."}
+    return {"message": "Pro API with Cookies Support is Running!"}
