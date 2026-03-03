@@ -9,49 +9,58 @@ class VideoRequest(BaseModel):
 
 @app.post("/api/download")
 async def get_media_info(request: VideoRequest):
-    # Ye target API carousels aur reels dono handle karti hay
-    target_api = "https://api.vveet.com/v1/ig/info"
+    # Naya aur stable bridge (igram.world logic)
+    target_api = "https://api.igram.world/api/ig/posts"
     
     headers = {
+        "Accept": "application/json, text/plain, */*",
         "Content-Type": "application/json",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        "Origin": "https://vveet.com",
-        "Referer": "https://vveet.com/"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "Origin": "https://igram.world",
+        "Referer": "https://igram.world/"
     }
     
     try:
-        # URL se extra kachra saaf karna
+        # Link ko clean krain
         clean_url = request.url.split('?')[0]
         
         # Request bhejna
-        response = requests.post(target_api, json={"url": clean_url}, headers=headers, timeout=15)
-        data = response.json()
+        response = requests.post(target_api, json={"url": clean_url}, headers=headers, timeout=20)
         
+        if response.status_code != 200:
+            return {"success": False, "message": "Bridge connection failed. Trying to bypass..."}
+
+        data = response.json()
         media_list = []
-        # JSON se images aur videos nikalna
-        if "data" in data and "medias" in data["data"]:
-            for item in data["data"]["medias"]:
+
+        # Igram ka response format parse karna
+        # Ye carousel (multiple images) ko array mein deta hay
+        medias = data.get("medias", [])
+        if not medias and "result" in data: # Backup check
+            medias = data.get("result", [])
+
+        for item in medias:
+            url = item.get("url") or item.get("downloadUrl")
+            if url:
                 media_list.append({
                     "type": "video" if item.get("type") == "video" else "image",
-                    "url": item.get("url"),
-                    "thumbnail": item.get("thumbnail") or item.get("url")
+                    "url": url,
+                    "thumbnail": item.get("thumbnail") or url
                 })
 
         if not media_list:
-            return {"success": False, "message": "Scraper ne koi data nahi diya. Link check krain."}
+            return {"success": False, "message": "No media found in this post."}
 
         return {
             "success": True,
-            "version": "5.0_FINAL_NO_YT_DLP",
-            "title": data.get("data", {}).get("title", "Instagram Post"),
+            "version": "6.0_STABLE_BRIDGE",
             "count": len(media_list),
             "media": media_list
         }
         
     except Exception as e:
-        return {"success": False, "error": "Server busy ya link invalid hay!", "details": str(e)}
+        return {"success": False, "error": "Server error, please try again!", "details": str(e)}
 
 @app.get("/")
 def home():
-    # Is message se confirm hoga ke naya code chal raha hay
-    return {"message": "Dhamaka Version 5.0 - NO YT-DLP LIVE!"}
+    return {"message": "Dhamaka Version 6.0 - STABLE BRIDGE LIVE!"}
