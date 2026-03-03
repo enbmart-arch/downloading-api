@@ -29,7 +29,9 @@ def get_media_item(item):
 async def get_media_info(request: VideoRequest):
     ydl_opts = {
         'quiet': True, 'skip_download': True, 'no_warnings': True, 'extract_flat': False,
-        'http_headers': {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+        # Agar aap cookies add karein toh ye line uncomment kar dijiyega:
+        # 'cookiefile': 'cookies.txt', 
+        'http_headers': {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
     }
     
     media_list = []
@@ -51,24 +53,21 @@ async def get_media_info(request: VideoRequest):
     except Exception:
         pass
 
-    # Engine 2: Cobalt V7 API (Fixed Endpoint - Carousels & Full Width ke liye)
+    # Engine 2: Alternative Cobalt Instance (co.wuk.sh - Carousels ke liye)
     if not media_list and "instagram.com" in request.url:
         try:
             req = urllib.request.Request(
-                "https://api.cobalt.tools/", # Naya V7 Endpoint (Yahan se /api/json hata diya)
-                data=json.dumps({"url": request.url}).encode('utf-8'),
+                "https://co.wuk.sh/api/json",
+                data=json.dumps({"url": request.url, "vQuality": "max"}).encode('utf-8'),
                 headers={
                     "Accept": "application/json",
                     "Content-Type": "application/json",
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-                    "Origin": "https://cobalt.tools",
-                    "Referer": "https://cobalt.tools/"
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
                 }
             )
             res = urllib.request.urlopen(req).read()
             data = json.loads(res.decode('utf-8'))
             
-            # V7 JSON Structure Parsing
             if data.get('status') == 'picker':
                 for item in data.get('picker', []):
                     media_list.append({
@@ -76,18 +75,14 @@ async def get_media_info(request: VideoRequest):
                         "url": item.get('url'),
                         "thumbnail": item.get('thumb') or item.get('url')
                     })
-            elif data.get('status') in ['redirect', 'success', 'stream', 'tunnel']:
+            elif data.get('status') in ['redirect', 'success', 'stream']:
                 url = data.get('url')
                 if url:
-                    media_list.append({
-                        "type": "video" if ".mp4" in url else "image",
-                        "url": url,
-                        "thumbnail": url
-                    })
+                    media_list.append({"type": "video" if ".mp4" in url else "image", "url": url, "thumbnail": url})
         except Exception:
             pass
 
-    # Engine 3: Embed Fallback (Akhri Rasta - Sirf Square Image dega)
+    # Engine 3: Embed Fallback (Akhri Rasta)
     if not media_list and "instagram.com" in request.url:
         try:
             shortcode_match = re.search(r'instagram\.com/(?:p|reel|tv)/([^/?#&]+)', request.url)
@@ -106,10 +101,10 @@ async def get_media_info(request: VideoRequest):
             pass
 
     if not media_list:
-        return {"success": False, "message": "Account shayad completely private hay ya block hay.", "original_url": request.url}
+        return {"success": False, "message": "API blocked. Cookies setup required.", "original_url": request.url}
         
     return {"success": True, "title": title, "media": media_list, "original_url": request.url}
 
 @app.get("/")
 def home():
-    return {"message": "API with Fixed Cobalt V7 Engine Running!"}
+    return {"message": "API with Alternative Proxy Engine Running!"}
