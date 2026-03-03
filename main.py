@@ -1,66 +1,80 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
 import requests
+import time
 
 app = FastAPI()
 
 class VideoRequest(BaseModel):
     url: str
 
+def try_engine_1(insta_url):
+    # Engine 1: Publer (Bohat stable hay)
+    try:
+        api_url = "https://publer.io/api/v1/social-provider/instagram/info"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Origin": "https://publer.io",
+            "Referer": "https://publer.io/"
+        }
+        response = requests.post(api_url, json={"url": insta_url}, headers=headers, timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            media_list = []
+            # Publer ka response format
+            for item in data.get('media', []):
+                media_list.append({
+                    "type": "video" if item.get('type') == 'video' else "image",
+                    "url": item.get('url'),
+                    "thumbnail": item.get('thumbnail') or item.get('url')
+                })
+            return media_list
+    except:
+        return None
+
+def try_engine_2(insta_url):
+    # Engine 2: Alternative stable bridge
+    try:
+        api_url = "https://api.vveet.com/v1/ig/info"
+        headers = {"User-Agent": "Mozilla/5.0"}
+        response = requests.post(api_url, json={"url": insta_url}, headers=headers, timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            media_list = []
+            for item in data.get('data', {}).get('medias', []):
+                media_list.append({
+                    "type": item.get('type'),
+                    "url": item.get('url'),
+                    "thumbnail": item.get('thumbnail')
+                })
+            return media_list
+    except:
+        return None
+
 @app.post("/api/download")
 async def get_media_info(request: VideoRequest):
-    # Naya aur stable bridge (igram.world logic)
-    target_api = "https://api.igram.world/api/ig/posts"
+    clean_url = request.url.split('?')[0]
     
-    headers = {
-        "Accept": "application/json, text/plain, */*",
-        "Content-Type": "application/json",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        "Origin": "https://igram.world",
-        "Referer": "https://igram.world/"
-    }
+    # Pehle Engine 1 koshish karega
+    result = try_engine_1(clean_url)
     
-    try:
-        # Link ko clean krain
-        clean_url = request.url.split('?')[0]
+    # Agar fail hua toh Engine 2
+    if not result:
+        result = try_engine_2(clean_url)
         
-        # Request bhejna
-        response = requests.post(target_api, json={"url": clean_url}, headers=headers, timeout=20)
-        
-        if response.status_code != 200:
-            return {"success": False, "message": "Bridge connection failed. Trying to bypass..."}
-
-        data = response.json()
-        media_list = []
-
-        # Igram ka response format parse karna
-        # Ye carousel (multiple images) ko array mein deta hay
-        medias = data.get("medias", [])
-        if not medias and "result" in data: # Backup check
-            medias = data.get("result", [])
-
-        for item in medias:
-            url = item.get("url") or item.get("downloadUrl")
-            if url:
-                media_list.append({
-                    "type": "video" if item.get("type") == "video" else "image",
-                    "url": url,
-                    "thumbnail": item.get("thumbnail") or url
-                })
-
-        if not media_list:
-            return {"success": False, "message": "No media found in this post."}
-
+    if result:
         return {
             "success": True,
-            "version": "6.0_STABLE_BRIDGE",
-            "count": len(media_list),
-            "media": media_list
+            "version": "7.0_MULTI_ENGINE",
+            "count": len(result),
+            "media": result
         }
-        
-    except Exception as e:
-        return {"success": False, "error": "Server error, please try again!", "details": str(e)}
+    
+    return {
+        "success": False, 
+        "message": "Saray engines block ho gaye hain. Instagram security tight hay."
+    }
 
 @app.get("/")
 def home():
-    return {"message": "Dhamaka Version 6.0 - STABLE BRIDGE LIVE!"}
+    return {"message": "Dhamaka Version 7.0 - MULTI ENGINE LIVE!"}
