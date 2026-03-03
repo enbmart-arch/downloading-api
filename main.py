@@ -1,75 +1,76 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import yt_dlp
-import os
 
-app = FastAPI(title="Pro Media Downloader API")
+app = FastAPI(title="Ultimate Downloader API")
 
 class VideoRequest(BaseModel):
     url: str
 
-def get_media_item(item):
-    url = item.get('url')
-    ext = item.get('ext', '')
-    if not url:
-        thumbnails = item.get('thumbnails', [])
-        if thumbnails:
-            url = thumbnails[-1].get('url') # High quality image
-        else:
-            url = item.get('thumbnail')
-            
-    if not url: return None
-        
-    media_type = "video" if ext in ['mp4', 'webm'] or '.mp4' in url else "image"
-    return {"type": media_type, "url": url, "thumbnail": item.get('thumbnail') or url}
-
 @app.post("/api/download")
 async def get_media_info(request: VideoRequest):
-    # Check krain ke cookies file majood hay ya nahi
-    cookie_path = 'cookies.txt'
-    has_cookies = os.path.exists(cookie_path)
-    
+    # In settings se yt-dlp deep search karega har image ke liye
     ydl_opts = {
-        'quiet': True, 
-        'skip_download': True, 
-        'no_warnings': True, 
-        'extract_flat': False,
+        'quiet': True,
+        'skip_download': True,
+        'no_warnings': True,
+        'extract_flat': False, # Ye zaroori hay carousel ki sari images ke liye
+        'force_generic_extractor': False,
         'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Sec-Fetch-Mode': 'navigate',
         }
     }
     
-    # Agar cookies file upload ki gayi hay, toh usay use krain
-    if has_cookies:
-        ydl_opts['cookiefile'] = cookie_path
-    
-    media_list = []
-    title = "Instagram Media"
-    
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(request.url, download=False)
-            title = info.get('title', 'Instagram Post')
+            # URL ko clean karna (extra parameters hatana)
+            clean_url = request.url.split('?')[0]
+            info = ydl.extract_info(clean_url, download=False)
             
-            # Carousel (Multiple Images/Videos) handle karna
-            if 'entries' in info and info['entries']:
+            media_list = []
+            
+            # Agar entries majood hain (Carousel/Playlist)
+            if 'entries' in info:
                 for entry in info['entries']:
                     if entry:
-                        m_item = get_media_item(entry)
-                        if m_item: media_list.append(m_item)
-            # Single Image/Video handle karna
+                        # Har entry ka best quality link nikalna
+                        url = entry.get('url') or entry.get('thumbnail')
+                        ext = entry.get('ext', '')
+                        m_type = "video" if ext in ['mp4', 'webm'] or (url and '.mp4' in url) else "image"
+                        
+                        media_list.append({
+                            "type": m_type,
+                            "url": url,
+                            "thumbnail": entry.get('thumbnail')
+                        })
+            
+            # Agar single post hay
             else:
-                m_item = get_media_item(info)
-                if m_item: media_list.append(m_item)
+                url = info.get('url') or info.get('thumbnail')
+                ext = info.get('ext', '')
+                m_type = "video" if ext in ['mp4', 'webm'] or (url and '.mp4' in url) else "image"
                 
-    except Exception as e:
-        return {"success": False, "message": f"Error: {str(e)}", "original_url": request.url}
+                media_list.append({
+                    "type": m_type,
+                    "url": url,
+                    "thumbnail": info.get('thumbnail')
+                })
 
-    if not media_list:
-        return {"success": False, "message": "Media nahi mila. Agar ye carousel hay toh cookies.txt lazmi upload krain.", "original_url": request.url}
-        
-    return {"success": True, "title": title, "media": media_list, "original_url": request.url}
+            return {
+                "success": True,
+                "title": info.get('title', 'Instagram Post'),
+                "media_count": len(media_list),
+                "media": media_list,
+                "original_url": request.url
+            }
+
+    except Exception as e:
+        # Agar block ho jaye toh error message show kare
+        raise HTTPException(status_code=400, detail=str(e))
 
 @app.get("/")
 def home():
-    return {"message": "Pro API with Cookies Support is Running!"}
+    return {"message": "API is online! Trying to bypass restrictions..."}
