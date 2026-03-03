@@ -46,7 +46,7 @@ async def get_media_info(request: VideoRequest):
     media_list = []
     title = "Unknown"
     
-    # Engine 1: yt-dlp (Videos aur supported media ke liye)
+    # Engine 1: Videos aur normal media ke liye (yt-dlp)
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(request.url, download=False)
@@ -63,36 +63,47 @@ async def get_media_info(request: VideoRequest):
                 if media_item:
                     media_list.append(media_item)
     except Exception as e:
-        pass # Agar yt-dlp fail ho jaye, toh hum chup chap Engine 2 par chale jayenge
+        pass # Agar library fail ho, toh chup chap Engine 2 par jao
 
-    # Engine 2: Custom HTML Scraper (Khaas tor par Instagram Images aur Carousels ke liye)
+    # Engine 2: The "Embed Page" Bypass Trick (Khaas Images ke liye)
     if not media_list and "instagram.com" in request.url:
         try:
-            req = urllib.request.Request(
-                request.url, 
-                headers={'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1'}
-            )
-            html_bytes = urllib.request.urlopen(req).read()
-            html_content = html_bytes.decode('utf-8')
-            
-            # Webpage ke source code se direct High-Res Image ka link nikalna
-            match = re.search(r'<meta property="og:image" content="([^"]+)"', html_content)
-            if match:
-                image_url = match.group(1).replace("&amp;", "&")
-                media_list.append({
-                    "type": "image",
-                    "url": image_url,
-                    "thumbnail": image_url
-                })
-                title = "Instagram Image Post"
+            # URL se sirf shortcode nikalna
+            shortcode_match = re.search(r'instagram\.com/(?:p|reel|tv)/([^/?#&]+)', request.url)
+            if shortcode_match:
+                shortcode = shortcode_match.group(1)
+                
+                # Embed URL create karna jo Login bypass karta hay
+                embed_url = f"https://www.instagram.com/p/{shortcode}/embed/captioned/"
+                
+                req = urllib.request.Request(
+                    embed_url, 
+                    headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+                )
+                html_bytes = urllib.request.urlopen(req).read()
+                html = html_bytes.decode('utf-8')
+                
+                # Embed code ke andar se tasweer dhoondna
+                img_match = re.search(r'class="EmbeddedMediaImage"[^>]*src="([^"]+)"', html)
+                if not img_match:
+                    img_match = re.search(r'src="([^"]+\.jpg[^"]*)"', html)
+                    
+                if img_match:
+                    image_url = img_match.group(1).replace("&amp;", "&")
+                    media_list.append({
+                        "type": "image",
+                        "url": image_url,
+                        "thumbnail": image_url
+                    })
+                    title = "Instagram Image"
         except Exception as backup_error:
             pass
 
-    # Agar dono engines fail ho jayen (Private account ki wajah se)
+    # Agar phir bhi dono engines fail ho jayen
     if not media_list:
         return {
             "success": False, 
-            "message": "Account private hay ya link block ho gaya hay.",
+            "message": "Account shayad completely private hay.",
             "original_url": request.url
         }
         
@@ -105,4 +116,4 @@ async def get_media_info(request: VideoRequest):
 
 @app.get("/")
 def home():
-    return {"message": "API with Dual Engine (Video + Image Scraper) is running!"}
+    return {"message": "API with Embed-Bypass Engine is fully active!"}
