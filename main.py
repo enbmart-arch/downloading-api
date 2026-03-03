@@ -9,10 +9,15 @@ class VideoRequest(BaseModel):
 
 @app.post("/api/download")
 async def get_media_info(request: VideoRequest):
+    # Yahan humne Fake Browser Header add kiya hay taake Instagram block na kare
     ydl_opts = {
         'quiet': True,
         'skip_download': True,
-        'no_warnings': True
+        'no_warnings': True,
+        'http_headers': {
+            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        }
     }
     
     try:
@@ -21,45 +26,33 @@ async def get_media_info(request: VideoRequest):
             
             media_list = []
             
-            # Agar multiple posts (carousel) hain aur list khali nahi hay
             if 'entries' in info and info['entries']:
                 for entry in info['entries']:
-                    if entry is None: # Agar koi item fetch na ho sakay toh skip krain
-                        continue
-                        
-                    ext = entry.get('ext', '')
-                    media_type = "video" if ext in ['mp4', 'webm'] else "image"
-                    
-                    # Images ke case mein kabhi direct 'url' nahi milta, wahan hum thumbnail use krain ge
-                    media_url = entry.get('url')
-                    if not media_url:
-                        media_url = entry.get('thumbnail')
-                        
-                    if media_url: 
-                        media_list.append({
-                            "type": media_type,
-                            "url": media_url,
-                            "thumbnail": entry.get('thumbnail')
-                        })
+                    if entry:
+                        # Direct url check krain, na milay toh thumbnail utha lain
+                        url = entry.get('url') or entry.get('thumbnail')
+                        if url:
+                            media_list.append({
+                                "type": "video" if entry.get('ext') in ['mp4', 'webm'] else "image",
+                                "url": url,
+                                "thumbnail": entry.get('thumbnail')
+                            })
             else:
-                # Agar single image/video hay
-                ext = info.get('ext', '')
-                media_type = "video" if ext in ['mp4', 'webm'] else "image"
-                
-                media_url = info.get('url')
-                if not media_url:
-                    media_url = info.get('thumbnail')
-                    
-                if media_url:
+                url = info.get('url') or info.get('thumbnail')
+                if url:
                     media_list.append({
-                        "type": media_type,
-                        "url": media_url,
+                        "type": "video" if info.get('ext') in ['mp4', 'webm'] else "image",
+                        "url": url,
                         "thumbnail": info.get('thumbnail')
                     })
             
-            # Agar aakhir mein koi bhi link na milay
-            if len(media_list) == 0:
-                raise Exception("Media nahi mila. Shayad account private hay ya link invalid hay.")
+            # Agar security ki wajah se link na milay toh proper message aye
+            if not media_list:
+                return {
+                    "success": False, 
+                    "message": "Instagram ne media block kar diya hay (Private account ya login required).",
+                    "original_url": request.url
+                }
                 
             return {
                 "success": True,
@@ -73,4 +66,4 @@ async def get_media_info(request: VideoRequest):
 
 @app.get("/")
 def home():
-    return {"message": "API is working perfectly for both Images and Videos!"}
+    return {"message": "API with Anti-Block Headers is running!"}
