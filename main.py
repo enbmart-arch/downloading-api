@@ -20,37 +20,26 @@ def get_media_item(item):
         else:
             url = item.get('thumbnail')
             
-    if not url:
-        return None
+    if not url: return None
         
     media_type = "video" if ext in ['mp4', 'webm'] or '.mp4' in url else "image"
-    return {
-        "type": media_type,
-        "url": url,
-        "thumbnail": item.get('thumbnail') or url
-    }
+    return {"type": media_type, "url": url, "thumbnail": item.get('thumbnail') or url}
 
 @app.post("/api/download")
 async def get_media_info(request: VideoRequest):
     ydl_opts = {
-        'quiet': True,
-        'skip_download': True,
-        'no_warnings': True,
-        'extract_flat': False,
-        'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        }
+        'quiet': True, 'skip_download': True, 'no_warnings': True, 'extract_flat': False,
+        'http_headers': {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
     }
     
     media_list = []
     title = "Instagram Media"
     
-    # Engine 1: yt-dlp (Standard Engine)
+    # Engine 1: yt-dlp (Videos ke liye)
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(request.url, download=False)
             title = info.get('title', 'Instagram Post')
-            
             if 'entries' in info and info['entries']:
                 for entry in info['entries']:
                     if entry:
@@ -62,11 +51,11 @@ async def get_media_info(request: VideoRequest):
     except Exception:
         pass
 
-    # Engine 2: High-Res Scraper Proxy (Full Width & Carousels ke liye)
+    # Engine 2: Cobalt V7 API (Fixed Endpoint - Carousels & Full Width ke liye)
     if not media_list and "instagram.com" in request.url:
         try:
             req = urllib.request.Request(
-                "https://api.cobalt.tools/api/json",
+                "https://api.cobalt.tools/", # Naya V7 Endpoint (Yahan se /api/json hata diya)
                 data=json.dumps({"url": request.url}).encode('utf-8'),
                 headers={
                     "Accept": "application/json",
@@ -79,7 +68,7 @@ async def get_media_info(request: VideoRequest):
             res = urllib.request.urlopen(req).read()
             data = json.loads(res.decode('utf-8'))
             
-            # Agar multiple images/videos hon (Carousel)
+            # V7 JSON Structure Parsing
             if data.get('status') == 'picker':
                 for item in data.get('picker', []):
                     media_list.append({
@@ -87,8 +76,7 @@ async def get_media_info(request: VideoRequest):
                         "url": item.get('url'),
                         "thumbnail": item.get('thumb') or item.get('url')
                     })
-            # Agar single full-res image/video ho
-            elif data.get('status') in ['redirect', 'success', 'stream']:
+            elif data.get('status') in ['redirect', 'success', 'stream', 'tunnel']:
                 url = data.get('url')
                 if url:
                     media_list.append({
@@ -99,7 +87,7 @@ async def get_media_info(request: VideoRequest):
         except Exception:
             pass
 
-    # Engine 3: Embed Fallback (Akhri Rasta - Single Square Image)
+    # Engine 3: Embed Fallback (Akhri Rasta - Sirf Square Image dega)
     if not media_list and "instagram.com" in request.url:
         try:
             shortcode_match = re.search(r'instagram\.com/(?:p|reel|tv)/([^/?#&]+)', request.url)
@@ -113,19 +101,15 @@ async def get_media_info(request: VideoRequest):
                     img_match = re.search(r'src="([^"]+\.jpg[^"]*)"', html)
                 if img_match:
                     img_url = img_match.group(1).replace("&amp;", "&")
-                    media_list.append({
-                        "type": "image",
-                        "url": img_url,
-                        "thumbnail": img_url
-                    })
+                    media_list.append({"type": "image", "url": img_url, "thumbnail": img_url})
         except Exception:
             pass
 
     if not media_list:
-        return {"success": False, "message": "Account shayad completely private hay.", "original_url": request.url}
+        return {"success": False, "message": "Account shayad completely private hay ya block hay.", "original_url": request.url}
         
     return {"success": True, "title": title, "media": media_list, "original_url": request.url}
 
 @app.get("/")
 def home():
-    return {"message": "Super API with 3 Engines (Carousels Fixed) is Running!"}
+    return {"message": "API with Fixed Cobalt V7 Engine Running!"}
