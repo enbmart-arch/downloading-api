@@ -1,70 +1,61 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import requests
-import time
+import re
 
-app = FastAPI(title="SSS Mimic API")
+app = FastAPI(title="Media Bridge API")
 
 class VideoRequest(BaseModel):
     url: str
 
 @app.post("/api/download")
 async def get_media_info(request: VideoRequest):
-    # Website ka asli backend endpoint
-    target_api = "https://api-wh.sssinstagram.com/api/convert"
+    # Target: Aik aisi site jo carousel handle karti hay
+    target_api = "https://api.vveet.com/v1/ig/info"
     
-    # Headers jo website ko mimic krain ge
     headers = {
-        "Accept": "application/json, text/plain, */*",
         "Content-Type": "application/json",
-        "Origin": "https://sssinstagram.com",
-        "Referer": "https://sssinstagram.com/",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        "X-Requested-With": "XMLHttpRequest"
+        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15",
+        "Origin": "https://vveet.com",
+        "Referer": "https://vveet.com/"
     }
     
-    # Payload jo aap ne provide kiya tha
-    # NOTE: Agar ye _s static nahi hay, toh ye method fail ho sakta hay
-    payload = {
-        "sf_url": request.url,
-        "ts": "1772560134165",
-        "_ts": "1770970183770",
-        "_tsc": "0",
-        "_sv": "2",
-        "_s": "4b67e2bcaa41a5f41b3a39ab416d0169c8e6f185e3653a3a4a1a0564d4d2e3d1"
-    }
+    # URL ko clean krain
+    clean_url = request.url.split('?')[0]
+    payload = {"url": clean_url}
 
     try:
         # Request bhejna
-        response = requests.post(target_api, json=payload, headers=headers, timeout=20)
+        response = requests.post(target_api, json=payload, headers=headers, timeout=15)
         
-        # Check krain ke website ne kya jawab diya
         if response.status_code != 200:
-            return {
-                "success": False,
-                "message": f"Website ne error diya code: {response.status_code}",
-                "raw_body": response.text[:500] # Pehle 500 characters check karne ke liye
-            }
+            return {"success": False, "message": "Third-party scraper block ho gaya hay."}
 
         data = response.json()
-        
-        # Agar response mein data mil jaye
-        if "data" in data:
-            return {
-                "success": True,
-                "data": data["data"], # SSS ka asli response
-                "original_url": request.url
-            }
-        else:
-            return {
-                "success": False,
-                "message": "Signature expired ya invalid link!",
-                "full_response": data
-            }
+        media_list = []
+
+        # JSON response ko parhna (Parsing)
+        if "data" in data and "medias" in data["data"]:
+            for item in data["data"]["medias"]:
+                media_list.append({
+                    "type": "video" if item.get("type") == "video" else "image",
+                    "url": item.get("url"),
+                    "thumbnail": item.get("thumbnail") or item.get("url")
+                })
+
+        if not media_list:
+            return {"success": False, "message": "Koi media nahi mila. Link check krain."}
+
+        return {
+            "success": True,
+            "title": data.get("data", {}).get("title", "Instagram Post"),
+            "count": len(media_list),
+            "media": media_list
+        }
 
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": "Server Busy! Dobara koshish krain."}
 
 @app.get("/")
 def home():
-    return {"message": "Mimic API is Live. Testing SSS Endpoint..."}
+    return {"message": "Bridge API is active. No yt-dlp here!"}
